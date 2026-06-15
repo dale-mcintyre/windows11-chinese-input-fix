@@ -2,62 +2,60 @@
 #SingleInstance Force
 
 /**
- * Windows 11 Caps Lock Language Toggle
+ * Windows 11 Language Toggle (Word-Compatible Version)
  * Author: Dale McIntyre
- * Description: Forces a clean binary toggle using Caps Lock.
- *              Caps Lock ON  -> Chinese Pinyin Input (Forces '中' mode)
- *              Caps Lock OFF -> Default English Input
+ * Description: Uses Right Alt (RAlt) to cleanly toggle between 
+ *              Chinese Pinyin and English, bypassing Microsoft Word's 
+ *              internal CapsLock interference.
  */
 
-global LastState := GetKeyState("CapsLock", "T")
+; State tracker: 0 = English, 1 = Chinese
+global ChineseMode := 0
 
-; Enforce language state when clicking or switching windows to defeat 
-; Windows 11's aggressive per-window layout overriding.
+; Enforce language state when clicking or switching windows
 ~LButton::EnforceState()
 ~^Tab::EnforceState()
 ~!Tab::EnforceState()
 
-~CapsLock:: {
-    global LastState
-    Sleep 50 ; Short delay to allow the physical key state to register
-    CurrentState := GetKeyState("CapsLock", "T")
+; Intercept Right Alt key tap
+RAlt:: {
+    global ChineseMode
     
-    if (CurrentState != LastState) {
-        ApplyLanguageState(CurrentState)
-        LastState := CurrentState
-    }
+    ; Toggle the internal tracker state
+    ChineseMode := !ChineseMode
+    
+    ApplyLanguageState(ChineseMode)
 }
 
 EnforceState() {
-    Sleep 100 ; Allow the new active window focus to settle
-    ApplyLanguageState(GetKeyState("CapsLock", "T"))
+    global ChineseMode
+    Sleep 100 ; Allow active window focus to settle
+    ApplyLanguageState(ChineseMode)
 }
 
-ApplyLanguageState(CapsOn) {
+ApplyLanguageState(SetChinese) {
     hwnd := WinExist("A")
     if (!hwnd)
         return
 
-    if (CapsOn) {
+    if (SetChinese) {
         ; 1. Set system layout to Chinese Simplified (0x0804)
         PostMessage(0x50, 0, 0x0804, , "A")
         
-        ; 2. Hard-reset the internal Microsoft Pinyin IME flag from English (英) to Chinese (中)
+        ; 2. Force the internal Microsoft Pinyin IME flag to Chinese (中)
         SetImeMode(hwnd, 1) 
     } else {
-        ; Caps Lock is off -> snap back to system default English layout
-        ; NOTE: Change the '0' to '0x0809' if you want to explicitly force UK English layout.
+        ; Snap back to system default English layout
         PostMessage(0x50, 0, 0, , "A")
     }
 }
 
-; Intercepts the low-level Windows Input Method Manager framework (imm32.dll)
+; Low-level Windows Input Method Manager framework hook
 SetImeMode(hwnd, mode) {
     try {
         imeHwnd := DllCall("imm32\ImmGetDefaultIMEWnd", "Ptr", hwnd, "Ptr")
         if (imeHwnd) {
             ; WM_IME_CONTROL (0x0283), IMC_SETCONVERSIONMODE (0x0002)
-            ; Passing 1025 forcefully locks the IME into native Chinese character entry
             SendMessage(0x0283, 0x0002, (mode ? 1025 : 0), , "ahk_id " imeHwnd)
         }
     }
